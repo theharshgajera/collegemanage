@@ -49,10 +49,10 @@
                                 <tr>
                                     <td>{{ i.id }}</td>
                                     <td>
-                                        <h2 class="table-avatar">
-                                            <a href="student-details.html" class="avatar avatar-sm mr-2"><img class="avatar-img rounded-circle" src="/{{ i.admin.profile_pic }}" alt="User Image"></a>
-                                            <a href="student-details.html">{{ i.admin.first_name }}</a>
-                                        </h2>
+                                        <div class="table-avatar">
+                                            <span class="avatar avatar-sm mr-2"><img class="avatar-img rounded-circle" src="/{{ i.admin.profile_pic }}" alt="User Image"></span>
+                                            <span>{{ i.admin.first_name }}</span>
+                                        </div>
                                     </td>
                                     <td>{{ i.enrollment_no }}</td>
                                     <td>{{ i.admin.email }}</td>
