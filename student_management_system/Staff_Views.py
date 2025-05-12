@@ -5,23 +5,44 @@ from django.http import HttpResponse
 from app.models import Course, Session_Year, CustomUser, Student, Staff, Subject, Staff_Notification, Staff_leave, Staff_Feedback, Student_Notification, Student_Feedback, Student_leave, Attendance, Attendance_Report, StudentResult, Note
 from django.contrib import messages
 import openpyxl
-
 @login_required(login_url='/')
 def HOME(request):
-    staff = Staff.objects.get(admin=request.user)
-    leave_count = Staff_leave.objects.filter(staff_id=staff, status=0).count()
-    feedback_count = Staff_Feedback.objects.filter(staff_id=staff, feedback_reply="").count()
-    subject_count = staff.subjects.count()
-    notification_count = Staff_Notification.objects.filter(staff_id=staff, status=0).count()
+    staff = Staff.objects.get(admin=request.user.id)
+    
+    # Get subjects taught by this staff using staff_members relationship
+    subjects = Subject.objects.filter(staff_members=staff)
+    total_subjects = subjects.count()
+    
+    # Get all students in staff's subjects
+    students_count = Student.objects.filter(course_id__in=subjects.values_list('course', flat=True)).distinct().count()
+    
+    # Get attendance statistics
+    attendance_taken = Attendance.objects.filter(subject_id__in=subjects).count()
+    
+    # Get leave statistics
+    leave_requests = Staff_leave.objects.filter(staff_id=staff)
+    total_leaves = leave_requests.count()
+    pending_leaves = leave_requests.filter(status=0).count()
+    approved_leaves = leave_requests.filter(status=1).count()
+    
+    # Get feedback statistics
+    total_feedback = Staff_Feedback.objects.filter(staff_id=staff).count()
+    
+    # Get notes count
     notes_count = Note.objects.filter(user=request.user).count()
-
+    
     context = {
-        'leave_count': leave_count,
-        'feedback_count': feedback_count,
-        'subject_count': subject_count,
-        'notification_count': notification_count,
+        'total_subjects': total_subjects,
+        'total_students': students_count,
+        'attendance_taken': attendance_taken,
+        'total_leaves': total_leaves,
+        'pending_leaves': pending_leaves,
+        'approved_leaves': approved_leaves,
+        'total_feedback': total_feedback,
         'notes_count': notes_count,
+        'staff': staff,
     }
+    
     return render(request, 'Staff/home.html', context)
 
 @login_required(login_url='/')
@@ -196,65 +217,86 @@ def STAFF_VIEW_ATTENDANCE(request):
     action = request.GET.get('action')
     get_subject = None
     get_session_year = None
-    start_date = request.GET.get('start_date') or request.POST.get('start_date')
-    end_date = request.GET.get('end_date') or request.POST.get('end_date')
+    attendance_date = request.GET.get('attendance_date')
     attendance_reports = None
 
     if action == 'view_attendance' or (request.method == "GET" and 'subject_id' in request.GET):
         if request.method == "POST":
             subject_id = request.POST.get('subject_id')
             session_year_id = request.POST.get('session_year_id')
+            attendance_date = request.POST.get('attendance_date')
         else:
             subject_id = request.GET.get('subject_id')
             session_year_id = request.GET.get('session_year_id')
+            attendance_date = request.GET.get('attendance_date')
 
         try:
             get_subject = Subject.objects.get(id=subject_id)
             get_session_year = Session_Year.objects.get(id=session_year_id)
-            
             if get_subject not in staff.subjects.all():
                 messages.error(request, "You are not authorized to view attendance for this subject.")
                 return redirect('staff_view_attendance')
-                
             attendance = Attendance.objects.filter(
                 subject_id=get_subject,
                 session_year_id=get_session_year
             )
-            
-            if start_date:
-                attendance = attendance.filter(attendance_data__gte=start_date)
-            if end_date:
-                attendance = attendance.filter(attendance_data__lte=end_date)
-                
+            if attendance_date:
+                attendance = attendance.filter(attendance_data=attendance_date)
             attendance_reports = Attendance_Report.objects.filter(
                 attendance_id__in=attendance
-            ).order_by('attendance_id__attendance_data', 'student_id__admin__first_name')
-
-        except (Subject.DoesNotExist, Session_Year.DoesNotExist):
-            messages.error(request, "Invalid subject or session year selected.")
+            ).order_by('student_id__admin__first_name')
+        except Subject.DoesNotExist:
+            messages.error(request, "Selected subject does not exist.")
+            return redirect('staff_view_attendance')
+        except Session_Year.DoesNotExist:
+            messages.error(request, "Selected session year does not exist.")
             return redirect('staff_view_attendance')
 
-    if request.GET.get('download') == 'csv':
-        if not attendance_reports:
+    if 'download' in request.GET and request.GET['download'] == 'excel':
+        subject_id = request.GET.get('subject_id')
+        session_year_id = request.GET.get('session_year_id')
+        attendance_date = request.GET.get('attendance_date')
+
+        try:
+            get_subject = Subject.objects.get(id=subject_id)
+            get_session_year = Session_Year.objects.get(id=session_year_id)
+            if get_subject not in staff.subjects.all():
+                messages.error(request, "You are not authorized to download attendance for this subject.")
+                return redirect('staff_view_attendance')
+            attendance = Attendance.objects.filter(
+                subject_id=get_subject,
+                session_year_id=get_session_year
+            )
+            if attendance_date:
+                attendance = attendance.filter(attendance_data=attendance_date)
+            attendance_reports = Attendance_Report.objects.filter(
+                attendance_id__in=attendance
+            ).order_by('student_id__admin__first_name')
+        except (Subject.DoesNotExist, Session_Year.DoesNotExist, ValueError) as e:
+            messages.error(request, "Invalid subject, session year, or attendance date selected.")
+            return redirect('staff_view_attendance')
+
+        if attendance_reports.exists():
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Attendance"
+            ws.append(["Student ID", "Student Name", "Subject", "Date", "Status"])
+            for report in attendance_reports:
+                student = report.student_id
+                ws.append([
+                    student.admin.id,
+                    f"{student.admin.first_name} {student.admin.last_name}",
+                    report.attendance_id.subject_id.name,
+                    report.attendance_id.attendance_data.strftime('%Y-%m-%d'),
+                    "Present" if report.status == 1 else "Absent"
+                ])
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = f'attachment; filename=attendance_{get_subject.name}_{attendance_date or get_session_year.session_start}.xlsx'
+            wb.save(response)
+            return response
+        else:
             messages.error(request, "No attendance data available to export.")
             return redirect('staff_view_attendance')
-
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename=attendance_{get_subject.name}_{start_date or "all"}_to_{end_date or "all"}.csv'
-        
-        writer = csv.writer(response)
-        writer.writerow(['Student ID', 'Student Name', 'Subject', 'Date', 'Status'])
-        
-        for report in attendance_reports:
-            writer.writerow([
-                report.student_id.admin.id,
-                f"{report.student_id.admin.first_name} {report.student_id.admin.last_name}",
-                report.attendance_id.subject_id.name,
-                report.attendance_id.attendance_data.strftime('%Y-%m-%d'),
-                "Present" if report.status == 1 else "Absent"
-            ])
-        
-        return response
 
     context = {
         'subjects': subjects,
@@ -262,8 +304,7 @@ def STAFF_VIEW_ATTENDANCE(request):
         'action': action,
         'get_subject': get_subject,
         'get_session_year': get_session_year,
-        'start_date': start_date,
-        'end_date': end_date,
+        'attendance_date': attendance_date,
         'attendance_reports': attendance_reports,
     }
     return render(request, 'Staff/view_attendance.html', context)
@@ -642,3 +683,165 @@ def STAFF_DELETE_NOTE(request, note_id):
     except Note.DoesNotExist:
         messages.error(request, 'Note not found.')
     return redirect('staff_notes')
+
+@login_required(login_url='/')
+def STAFF_MANAGE_TEACHER_NOTES(request):
+    staff = Staff.objects.get(admin=request.user.id)
+    subjects = Subject.objects.filter(staff=staff)
+    
+    selected_subject = request.GET.get('subject')
+    if selected_subject:
+        notes = SubjectNote.objects.filter(
+            subject_id=selected_subject,
+            subject__staff=staff
+        ).order_by('-created_at')
+    else:
+        notes = SubjectNote.objects.filter(
+            subject__staff=staff
+        ).order_by('-created_at')
+    
+    context = {
+        'subjects': subjects,
+        'notes': notes,
+        'selected_subject': selected_subject
+    }
+    return render(request, 'Staff/manage_teacher_notes.html', context)
+
+@login_required(login_url='/')
+def STAFF_EDIT_TEACHER_NOTE(request, note_id):
+    staff = Staff.objects.get(admin=request.user.id)
+    try:
+        note = SubjectNote.objects.get(id=note_id, subject__staff=staff)
+    except SubjectNote.DoesNotExist:
+        messages.error(request, "Note not found")
+        return redirect('staff_manage_teacher_notes')
+        
+    if request.method == "POST":
+        title = request.POST.get('title')
+        content = request.POST.get('content')
+        file = request.FILES.get('file')
+        
+        if not all([title, content]):
+            messages.error(request, "Please fill all required fields")
+        else:
+            note.title = title
+            note.content = content
+            if file:
+                note.file = file
+            note.save()
+            messages.success(request, "Note updated successfully!")
+            return redirect('staff_manage_teacher_notes')
+            
+    context = {
+        'note': note
+    }
+    return render(request, 'Staff/edit_teacher_note.html', context)
+
+@login_required(login_url='/')
+def STAFF_DELETE_TEACHER_NOTE(request, note_id):
+    staff = Staff.objects.get(admin=request.user.id)
+    try:
+        note = SubjectNote.objects.get(id=note_id, subject__staff=staff)
+        note.delete()
+        messages.success(request, "Note deleted successfully!")
+    except SubjectNote.DoesNotExist:
+        messages.error(request, "Note not found")
+    return redirect('staff_manage_teacher_notes')
+
+@login_required(login_url='/')
+def STAFF_MANAGE_SUBJECT_NOTES(request):
+    staff = Staff.objects.get(admin=request.user.id)
+    subjects = Subject.objects.filter(staff=staff)
+    
+    selected_subject = request.GET.get('subject')
+    if selected_subject:
+        notes = SubjectNote.objects.filter(
+            subject_id=selected_subject,
+            subject__staff=staff
+        ).order_by('-created_at')
+    else:
+        notes = SubjectNote.objects.filter(
+            subject__staff=staff
+        ).order_by('-created_at')
+    
+    context = {
+        'subjects': subjects,
+        'notes': notes,
+        'selected_subject': selected_subject
+    }
+    return render(request, 'Staff/manage_subject_notes.html', context)
+
+@login_required(login_url='/')
+def STAFF_EDIT_SUBJECT_NOTE(request, note_id):
+    staff = Staff.objects.get(admin=request.user.id)
+    try:
+        note = SubjectNote.objects.get(id=note_id, subject__staff=staff)
+    except SubjectNote.DoesNotExist:
+        messages.error(request, "Note not found")
+        return redirect('staff_manage_subject_notes')
+        
+    if request.method == "POST":
+        title = request.POST.get('title')
+        content = request.POST.get('content')
+        file = request.FILES.get('file')
+        
+        if not all([title, content]):
+            messages.error(request, "Please fill all required fields")
+        else:
+            note.title = title
+            note.content = content
+            if file:
+                note.file = file
+            note.save()
+            messages.success(request, "Note updated successfully!")
+            return redirect('staff_manage_subject_notes')
+            
+    context = {
+        'note': note
+    }
+    return render(request, 'Staff/edit_subject_note.html', context)
+
+@login_required(login_url='/')
+def STAFF_DELETE_SUBJECT_NOTE(request, note_id):
+    staff = Staff.objects.get(admin=request.user.id)
+    try:
+        note = SubjectNote.objects.get(id=note_id, subject__staff=staff)
+        note.delete()
+        messages.success(request, "Note deleted successfully!")
+    except SubjectNote.DoesNotExist:
+        messages.error(request, "Note not found")
+    return redirect('staff_manage_subject_notes')
+
+@login_required(login_url='/')
+def STAFF_ADD_SUBJECT_NOTE(request):
+    staff = Staff.objects.get(admin=request.user.id)
+    subjects = Subject.objects.filter(staff=staff)
+    
+    if request.method == "POST":
+        subject_id = request.POST.get('subject')
+        title = request.POST.get('title')
+        content = request.POST.get('content')
+        file = request.FILES.get('file')
+        
+        if not all([subject_id, title, content]):
+            messages.error(request, "Please fill all required fields")
+            return redirect('staff_add_subject_note')
+            
+        try:
+            subject = Subject.objects.get(id=subject_id, staff=staff)
+            note = SubjectNote(
+                subject=subject,
+                title=title,
+                content=content,
+                file=file
+            )
+            note.save()
+            messages.success(request, "Note added successfully!")
+            return redirect('staff_manage_subject_notes')
+        except Subject.DoesNotExist:
+            messages.error(request, "Invalid subject selected")
+            
+    context = {
+        'subjects': subjects
+    }
+    return render(request, 'Staff/add_subject_note.html', context)

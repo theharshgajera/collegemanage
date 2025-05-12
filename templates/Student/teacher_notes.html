@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="container-fluid">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Teacher Notes</h3>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <form method="GET">
+                        <div class="form-group">
+                            <label>Filter by Subject:</label>
+                            <select class="form-control" name="subject" onchange="this.form.submit()">
+                                <option value="">All Subjects</option>
+                                {% for subject in subjects %}
+                                <option value="{{ subject.id }}" {% if selected_subject == subject.id|stringformat:"s" %}selected{% endif %}>
+                                    {{ subject.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            {% if notes %}
+            <div class="row">
+                {% for note in notes %}
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">{{ note.title }}</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text">{{ note.content|linebreaks }}</p>
+                            {% if note.file %}
+                            <a href="{{ note.file.url }}" class="btn btn-sm btn-info" target="_blank">Download Attachment</a>
+                            {% endif %}
+                        </div>
+                        <div class="card-footer text-muted">
+                            Subject: {{ note.subject.name }}<br>
+                            Posted: {{ note.created_at|date:"d-m-Y H:i" }}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-center">No notes available.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}

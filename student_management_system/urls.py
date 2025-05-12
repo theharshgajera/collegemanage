@@ -80,9 +80,8 @@ urlpatterns = [
     path('Staff/Notes/Create', Staff_Views.STAFF_CREATE_NOTE, name='staff_create_note'),
     path('Staff/Notes/Edit/<int:note_id>', Staff_Views.STAFF_EDIT_NOTE, name='staff_edit_note'),
     path('Staff/Notes/Delete/<int:note_id>', Staff_Views.STAFF_DELETE_NOTE, name='staff_delete_note'),
-
     # Student URLs
-    path('Student/Home', Student_Views.Home, name='student_home'),
+    path('student/home/', Student_Views.HOME, name='student_home'),  # Updated to match the new function name
     path('Student/Notifications', Student_Views.STUDENT_NOTIFICATION, name='student_notification'),
     path('Student/mark_as_done/<str:status>', Student_Views.STUDENT_NOTIFICATION_MARK_AS_DONE, name='student_notification_mark_as_done'),
     path('Student/feedback', Student_Views.STUDENT_FEEDBACK, name='student_feedback'),
@@ -95,6 +94,7 @@ urlpatterns = [
     path('Student/Notes/Create', Student_Views.STUDENT_CREATE_NOTE, name='student_create_note'),
     path('Student/Notes/Edit/<int:note_id>', Student_Views.STUDENT_EDIT_NOTE, name='student_edit_note'),
     path('Student/Notes/Delete/<int:note_id>', Student_Views.STUDENT_DELETE_NOTE, name='student_delete_note'),
+    path('student/ask_doubt', Student_Views.STUDENT_ASK_DOUBT, name='student_ask_doubt'),
 
     # Parent URLs
     path('Parent/Home', parent_views.HOME, name='parent_home'),
@@ -104,4 +104,27 @@ urlpatterns = [
     path('Hod/download_sample_csv', Hod_Views.DOWNLOAD_SAMPLE_CSV, name='download_sample_csv'),
     path('Hod/bulk_add_staff', Hod_Views.BULK_ADD_STAFF, name='bulk_add_staff'),
     path('Hod/download_staff_sample_csv', Hod_Views.DOWNLOAD_STAFF_SAMPLE_CSV, name='download_staff_sample_csv'),
+    # Student URLs
+    # Remove or comment out these lines
+    # path('student/subject_notes/', Student_Views.STUDENT_VIEW_SUBJECT_NOTES, name='student_view_subject_notes'),
+    
+    # Add these new paths for teacher notes
+    path('student/teacher_notes/', Student_Views.STUDENT_VIEW_TEACHER_NOTES, name='student_view_teacher_notes'),
+    path('student/ask_doubt', Student_Views.STUDENT_ASK_DOUBT, name='student_ask_doubt'),
+
+    # Parent URLs
+    path('Parent/Home', parent_views.HOME, name='parent_home'),
+    path('Parent/View_Attendance', parent_views.VIEW_ATTENDANCE, name='parent_view_attendance'),
+    path('Parent/View_Result', parent_views.VIEW_RESULT, name='parent_view_result'),
+    path('Hod/bulk_add_student', Hod_Views.BULK_ADD_STUDENT, name='bulk_add_student'),
+    path('Hod/download_sample_csv', Hod_Views.DOWNLOAD_SAMPLE_CSV, name='download_sample_csv'),
+    path('Hod/bulk_add_staff', Hod_Views.BULK_ADD_STAFF, name='bulk_add_staff'),
+    path('Hod/download_staff_sample_csv', Hod_Views.DOWNLOAD_STAFF_SAMPLE_CSV, name='download_staff_sample_csv'),
+    # Staff URLs
+    # Update these paths to match the correct function names
+    # Staff Subject Notes URLs
+    path('staff/subject_notes/add/', Staff_Views.STAFF_ADD_SUBJECT_NOTE, name='staff_add_subject_note'),
+    path('staff/subject_notes/manage/', Staff_Views.STAFF_MANAGE_SUBJECT_NOTES, name='staff_manage_subject_notes'),
+    path('staff/subject_notes/edit/<int:note_id>/', Staff_Views.STAFF_EDIT_SUBJECT_NOTE, name='staff_edit_subject_note'),
+    path('staff/subject_notes/delete/<int:note_id>/', Staff_Views.STAFF_DELETE_SUBJECT_NOTE, name='staff_delete_subject_note'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

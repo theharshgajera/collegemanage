@@ -122,3 +122,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 AUTH_USER_MODEL = 'app.CustomUser'
+
+GEMINI_API_KEY = 'AIzaSyC5rlivQi9ryKAU77ITi2yj2voPxEJpZZA'

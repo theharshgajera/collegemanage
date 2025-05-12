@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect
 from django.http import HttpResponse
-from app.models import Student_Notification, Student, Student_Feedback, Student_leave, Subject, Attendance, Attendance_Report, StudentResult, Session_Year, Note
+from app.models import Student_Notification, Student, Student_Feedback, Student_leave, Subject, Attendance, Attendance_Report, StudentResult, Session_Year, Note, StudentDoubt
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 import openpyxl
@@ -9,21 +9,58 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 import io
+import google.generativeai as genai
+from django.conf import settings
 
 @login_required(login_url='/')
-def Home(request):
-    mark = None
-    stud_result = StudentResult.objects.filter(student_id__admin=request.user.id)
-    for i in stud_result:
-        assignment_mark = i.assignment_mark or 0
-        exam_mark = i.exam_mark or 0
-        mark = assignment_mark + exam_mark
-    notes_count = Note.objects.filter(user=request.user).count()
-    context = {
-        'mark': mark,
-        'notes_count': notes_count,
-    }
-    return render(request, 'Student/home.html', context)
+# Remove this function as it's no longer needed
+# @login_required(login_url='/')
+# def calculate_attendance_score(present_count, total_count, max_score=10):
+#     if total_count == 0:
+#         return 0
+#     attendance_percentage = (present_count / total_count) * 100
+#     attendance_score = (attendance_percentage / 100) * max_score
+#     return round(attendance_score, 2)
+
+@login_required(login_url='/')
+def HOME(request):
+    try:
+        # Check if user is a student
+        if request.user.user_type != '3':
+            messages.error(request, "Access Denied: You are not a student")
+            return redirect('login')
+            
+        student = Student.objects.get(admin=request.user)
+        
+        # Get total subjects
+        total_subjects = Subject.objects.filter(course=student.course_id).count()
+        
+        # Calculate attendance percentage
+        attendance_present = Attendance_Report.objects.filter(
+            student_id=student,
+            status=1
+        ).count()
+        total_attendance = Attendance_Report.objects.filter(student_id=student).count()
+        attendance_percentage = (attendance_present / total_attendance * 100) if total_attendance > 0 else 0
+        
+        context = {
+            'student': student,
+            'total_subjects': total_subjects,
+            'attendance_percentage': round(attendance_percentage, 2),
+            'notes_count': Note.objects.filter(user=request.user).count(),
+            'doubts_count': StudentDoubt.objects.filter(student=student).count(),
+            'leave_count': Student_leave.objects.filter(student_id=student).count(),
+            'pending_leaves': Student_leave.objects.filter(student_id=student, status=0).count(),
+            'results': StudentResult.objects.filter(student_id=student),
+        }
+        return render(request, 'Student/home.html', context)
+        
+    except Student.DoesNotExist:
+        messages.error(request, "Student record not found")
+        return redirect('login')
+    except Exception as e:
+        messages.error(request, f"An error occurred: {str(e)}")
+        return redirect('login')
 
 @login_required(login_url='/')
 def STUDENT_NOTIFICATION(request):
@@ -283,13 +320,106 @@ def VIEW_RESULT(request):
 
 # New views for student notes
 @login_required(login_url='/')
-def STUDENT_NOTES(request):
+def STUDENT_ASK_DOUBT(request):
     student = Student.objects.get(admin=request.user)
-    notes = Note.objects.filter(user=student.admin)
+    subjects = Subject.objects.filter(course=student.course_id)
+    doubts = StudentDoubt.objects.filter(student=student)
+
+    if request.method == "POST":
+        subject_id = request.POST.get('subject_id')
+        question = request.POST.get('question')
+        
+        if not all([subject_id, question]):
+            messages.error(request, "Please select a subject and enter your question")
+            return redirect('student_ask_doubt')
+            
+        try:
+            subject = Subject.objects.get(id=subject_id)
+            
+            # Configure Gemini AI
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel('gemini-2.0-flash')  # Using the free tier model
+            
+            prompt = f"""As an educational AI assistant, help with this academic question:
+            Subject: {subject.name}
+            Course: {subject.course.name}
+            Question: {question}
+            
+            Provide:
+            1. Clear explanation
+            2. Examples if relevant
+            3. Key points to remember
+            """
+            
+            try:
+                response = model.generate_content(prompt)
+                
+                if response.text:
+                    ai_response = response.text
+                else:
+                    raise Exception("Empty response from AI")
+                    
+            except Exception as e:
+                print(f"AI Error: {str(e)}")
+                messages.warning(request, "There was an issue getting the AI response. Please try again.")
+                return redirect('student_ask_doubt')
+            
+            # Save the doubt and response
+            doubt = StudentDoubt.objects.create(
+                student=student,
+                subject=subject,
+                question=question,
+                ai_response=ai_response
+            )
+            
+            messages.success(request, "Your doubt has been answered!")
+            return redirect('student_ask_doubt')
+            
+        except Subject.DoesNotExist:
+            messages.error(request, "Invalid subject selected")
+        except Exception as e:
+            print(f"General Error: {str(e)}")
+            messages.error(request, "An error occurred while processing your request. Please try again.")
+            
     context = {
-        'notes': notes,
+        'subjects': subjects,
+        'doubts': doubts
     }
-    return render(request, 'Student/notes.html', context)
+    return render(request, 'Student/ask_doubt.html', context)
+
+@login_required(login_url='/')
+def STUDENT_VIEW_TEACHER_NOTES(request):
+    try:
+        student = Student.objects.get(admin=request.user.id)
+        # Get subjects for this student's course
+        subjects = Subject.objects.filter(course=student.course_id)
+        
+        # Get selected subject filter
+        selected_subject = request.GET.get('subject')
+        
+        if selected_subject:
+            notes = SubjectNote.objects.filter(
+                subject_id=selected_subject,
+                subject__course=student.course_id
+            ).order_by('-created_at')
+        else:
+            notes = SubjectNote.objects.filter(
+                subject__course=student.course_id
+            ).order_by('-created_at')
+        
+        context = {
+            'subjects': subjects,
+            'notes': notes,
+            'selected_subject': selected_subject
+        }
+        return render(request, 'Student/teacher_notes.html', context)
+        
+    except Student.DoesNotExist:
+        messages.error(request, "Student record not found")
+        return redirect('login')
+    except Exception as e:
+        messages.error(request, f"An error occurred: {str(e)}")
+        return redirect('login')
 
 @login_required(login_url='/')
 def STUDENT_CREATE_NOTE(request):
@@ -337,3 +467,15 @@ def STUDENT_DELETE_NOTE(request, note_id):
     except Note.DoesNotExist:
         messages.error(request, 'Note not found.')
     return redirect('student_notes')
+
+@login_required(login_url='/')
+def STUDENT_NOTES(request):
+    try:
+        notes = Note.objects.filter(user=request.user).order_by('-created_at')
+        context = {
+            'notes': notes
+        }
+        return render(request, 'Student/notes.html', context)
+    except Exception as e:
+        messages.error(request, f"An error occurred: {str(e)}")
+        return redirect('student_home')

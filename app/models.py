@@ -226,3 +226,26 @@ class StudentResult(models.Model):
 
     def __str__(self):
         return f"{self.student_id.admin.first_name} - {self.subject_id.name}"
+
+
+class StudentDoubt(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    question = models.TextField()
+    ai_response = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+
+
+class SubjectNote(models.Model):
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    content = models.TextField()
+    file = models.FileField(upload_to='subject_notes/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.subject.name} - {self.title}"

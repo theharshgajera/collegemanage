@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="content container-fluid">
+    <div class="page-header">
+        <div class="row align-items-center">
+            <div class="col">
+                <h3 class="page-title">Ask Doubt (AI Assistant)</h3>
+                <ul class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'student_home' %}">Dashboard</a></li>
+                    <li class="breadcrumb-item active">Ask Doubt</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    {% include 'includes/messages.html' %}
+
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="card">
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-12">
+                                <h5 class="form-title"><span>Ask Your Doubt</span></h5>
+                            </div>
+                            <div class="col-12 col-sm-6">
+                                <div class="form-group">
+                                    <label>Select Subject</label>
+                                    <select class="form-control" name="subject_id" required>
+                                        <option value="">Select Subject</option>
+                                        {% for subject in subjects %}
+                                        <option value="{{ subject.id }}">{{ subject.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-group">
+                                    <label>Your Question</label>
+                                    <textarea class="form-control" name="question" rows="4" required></textarea>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-primary">Ask Question</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-sm-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Previous Doubts</h5>
+                    {% for doubt in doubts %}
+                    <div class="doubt-item mb-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <strong>Subject:</strong> {{ doubt.subject.name }} | 
+                                <small>Asked on: {{ doubt.created_at|date:"d M Y, h:i A" }}</small>
+                            </div>
+                            <div class="card-body">
+                                <h6 class="card-subtitle mb-2 text-muted">Question:</h6>
+                                <p class="card-text">{{ doubt.question }}</p>
+                                <h6 class="card-subtitle mb-2 text-muted">AI Response:</h6>
+                                <p class="card-text">{{ doubt.ai_response|linebreaks }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted">No previous doubts found.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
